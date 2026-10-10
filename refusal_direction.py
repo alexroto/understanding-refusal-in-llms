@@ -380,8 +380,11 @@ def run_ablation(model, tokenizer, cfg: ModelConfig, args) -> None:
     print(f"{len(pending)} prompts remaining ({args.condition}).")
 
     if not pending.empty:
-        direction = torch.load(DIRECTIONS_DIR / cfg.slug / "refusal_direction.pt")
-        with ablation_hooks(model, direction) if ablate else nullcontext():
+        context = nullcontext()
+        if ablate:
+            direction = torch.load(DIRECTIONS_DIR / cfg.slug / "refusal_direction.pt", map_location=DEVICE)
+            context = ablation_hooks(model, direction)
+        with context:
             run_generation(model, tokenizer, cfg, pending, prompts, paths, results, failed_ids)
 
     results_df = pd.DataFrame(results)
@@ -401,7 +404,7 @@ def run_ablation(model, tokenizer, cfg: ModelConfig, args) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--model", required=True, help="Model key in the config file (e.g. llama2)")
-    parser.add_argument("--stage", choices=["find_refusal_direction", "ablate_refusal_direction", "all"], default="all")
+    parser.add_argument("--stage", choices=["direction", "ablate", "find_refusal_direction", "ablate_refusal_direction", "all"], default="all")
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG_PATH)
 
     direction = parser.add_argument_group("direction stage")
@@ -415,7 +418,9 @@ def parse_args() -> argparse.Namespace:
     ablate.add_argument("--eval-data", type=Path, default=DEFAULT_EVAL_DATA)
     ablate.add_argument("--prompt-column", default="goal")
     ablate.add_argument("--condition", choices=["ablated", "baseline"], default="ablated")
-    return parser.parse_args()
+    args = parser.parse_args()
+    args.stage = {"find_refusal_direction": "direction", "ablate_refusal_direction": "ablate"}.get(args.stage, args.stage)
+    return args
 
 
 def main() -> None:
@@ -423,8 +428,8 @@ def main() -> None:
     torch.manual_seed(SEED)
     model_config = load_model_config(args.config, args.model)
 
-    calculate_refusal_direction = args.stage in ("find_refusal_direction", "all")
-    ablate_refusal_direction = args.stage in ("ablate_refusal_direction", "all")
+    calculate_refusal_direction = args.stage in ("direction", "all")
+    ablate_refusal_direction = args.stage in ("ablate", "all")
 
     # Fail fast, before the model loads.
     if ablate_refusal_direction and not args.eval_data.exists():
@@ -433,7 +438,7 @@ def main() -> None:
             "or use --stage direction for now."
         )
     refusal_direction_tensor_path = DIRECTIONS_DIR / model_config.slug / "refusal_direction.pt"
-    if args.stage == "ablate_refusal_direction" and args.condition == "ablated" and not refusal_direction_tensor_path.exists():
+    if args.stage == "ablate" and args.condition == "ablated" and not refusal_direction_tensor_path.exists():
         raise FileNotFoundError(f"{refusal_direction_tensor_path} not found. Run --stage direction first.")
 
     model, tokenizer = load_model_and_tokenizer(model_config)

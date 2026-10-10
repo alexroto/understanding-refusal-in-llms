@@ -2,9 +2,16 @@ import json
 
 import pandas as pd
 
-from baseline_refusal import META_COLUMNS, save_failed
 from utils.data_spec import DatasetSpec
 from utils.run_utils import RunPaths
+
+
+META_COLUMNS = ["source", "topic", "topic_name"]
+
+
+def save_failed(paths: RunPaths, prompts: pd.DataFrame, failed_ids: list[int]) -> None:
+    failed = prompts[prompts["prompt_id"].isin(failed_ids)]
+    failed[["prompt_id", "prompt"]].to_csv(paths.failed_log, index=False)
 
 
 def load_prompts(spec: DatasetSpec) -> pd.DataFrame:

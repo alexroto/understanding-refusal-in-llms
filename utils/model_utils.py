@@ -1,6 +1,11 @@
-from baseline_refusal import HF_TOKEN, DEVICE
+import os
+
+import torch
 from utils.model_config import ModelConfig
 from transformers import AutoModelForCausalLM, AutoTokenizer
+
+HF_TOKEN = os.getenv("HF_TOKEN")
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # ---------------------------------------------------------------------------
 # Helper functions to:
